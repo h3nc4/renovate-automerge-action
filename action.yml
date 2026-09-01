@@ -101,7 +101,7 @@ runs:
         [ -n "${number}" ] || skip "No open pull request for ${HEAD_BRANCH}"
 
         # workflow_run.actor is whoever pushed, this is whoever opened it.
-        author=$(gh pr view "${number}" --json author --jq '.author.login')
+        author=$(gh api "repos/${GH_REPO}/pulls/${number}" --jq '.user.login')
         [ "${author}" = "${BOT}" ] ||
           skip "Pull request #${number} was opened by '${author}', not ${BOT}"
 
