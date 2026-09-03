@@ -32,12 +32,24 @@ inputs:
     description: Delete the branch after merging.
     required: false
     default: "true"
+  client-id:
+    description: >
+      GitHub App id used to mint a token. Defaults to the app this action was written for, so a
+      caller only passes the private key. Anyone else has to override it.
+    required: false
+    default: "000000"
+  private-key:
+    description: >
+      Private key of that app, from a secret. An action cannot read the secrets context, so the
+      calling workflow has to pass it.
+    required: false
+    default: ""
   token:
     description: >
-      Token used to read and merge the pull request. The default job token is enough. The
-      calling job must grant it contents:write and pull-requests:write.
+      Token to use instead of an app, such as a personal access token. Falls back to the job
+      token, which merges but triggers no workflows.
     required: false
-    default: ${{ github.token }}
+    default: ""
 
 outputs:
   merged:
@@ -47,6 +59,14 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Mint an app token
+      id: app-token
+      if: inputs.token == '' && inputs.client-id != ''
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+
     # Every guard is repeated here rather than left to the caller's `if`: a caller that omits
     # one should still be safe. github.actor and workflow_run.actor.login are GitHub identities,
     # so they cannot be forged by setting a commit author.
@@ -54,7 +74,7 @@ runs:
       id: merge
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.token }}
+        GH_TOKEN: ${{ inputs.token || steps.app-token.outputs.token || github.token }}
         GH_REPO: ${{ github.repository }}
         EVENT_NAME: ${{ github.event_name }}
         RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
