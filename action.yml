@@ -130,6 +130,21 @@ runs:
           skip "Pull request #${number} does not carry '${LABEL}'"
         fi
 
+        # The triggering run is only one check. A repository can gate a pull request with
+        # several workflows, and listing them all in workflow_run means this fires once per
+        # workflow, so the earlier fires skip here and the last one merges.
+        CHECKS="repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs?per_page=100"
+        total=$(gh api "${CHECKS}" --jq '.check_runs | length')
+        [ "${total}" -gt 0 ] || skip "No check runs on ${HEAD_SHA}"
+        pending=$(gh api "${CHECKS}" --jq '
+          .check_runs[]
+          | select(
+              .status != "completed"
+              or (.conclusion as $c | ["success", "skipped", "neutral"] | index($c) | not)
+            )
+          | "\(.name) is \(.status)/\(.conclusion // "-")"')
+        [ -z "${pending}" ] || skip "Not every check on ${HEAD_SHA} passed: ${pending}"
+
         # Every commit must be authored by the bot and signed by GitHub itself.
         commits=$(gh api --paginate "repos/${GH_REPO}/pulls/${number}/commits" --jq '
           .[] | [
