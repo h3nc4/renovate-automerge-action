@@ -182,13 +182,8 @@ runs:
           args="${args} --delete-branch"
         fi
 
-        # --match-head-commit refuses the merge when anything landed after the commit CI tested,
-        # and that refusal arrives as a failed gh call rather than a quiet no-op.
-        #
-        # A moved head is ordinary here: Renovate rebases its own branch whenever main advances,
-        # which it did four and six seconds into two of these runs on WASudoku on 2026-09-22. The
-        # rebased commit gets a CI run of its own and the automerge behind that one merges, so
-        # this reports a notice instead of failing, which is what the README already promises.
+        # --match-head-commit refuses a head that moved after CI, as a failed gh call. Renovate
+        # rebases its own branch when main advances, so the README calls that a notice.
         # shellcheck disable=SC2086
         if ! merge_output=$(gh pr merge "${number}" ${args} --match-head-commit "${HEAD_SHA}" 2>&1); then
           printf '%s\n' "${merge_output}"
