@@ -84,12 +84,7 @@ Each of these exits successfully with a notice rather than failing, so unrelated
 - **any commit in the pull request is not authored by the bot, or not signed by GitHub**. This one reports a warning rather than a notice, since it means an otherwise mergeable Renovate pull request was touched
 - anything was pushed to the branch after the commit CI tested (`--match-head-commit`)
 
-That last one comes back from the merge call as `Head branch was modified`, a failed `gh`
-invocation rather than a quiet no-op. The action reads the pull request's head again before
-deciding. When it differs from the tested commit, the notice reports both, because Renovate
-rebases its own branch whenever the base advances and the rebased commit gets a CI run of its
-own whose automerge merges it. A head that still matches means the refusal raced a ref update
-that has since settled, and the merge is tried once more. Any other merge error fails the job.
+That last one comes back from the merge call as `Head branch was modified`, a failed `gh` invocation rather than a quiet no-op. The action reads the pull request's head again before deciding. When it differs from the tested commit, the notice reports both, because Renovate rebases its own branch whenever the base advances and the rebased commit gets a CI run of its own whose automerge merges it. A head that still matches means the refusal raced a ref update that has since settled, and the merge is tried once more. Any other merge error fails the job.
 
 Both identity checks read GitHub identities, not commit metadata, so they cannot be forged by
 setting a commit author. `renovate[bot]` is also unregisterable by a person: `[bot]` is reserved
