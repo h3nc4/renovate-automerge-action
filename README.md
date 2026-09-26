@@ -1,12 +1,12 @@
 # Automerge Renovate pull request
 
-Merges a Renovate pull request the moment CI passes, instead of waiting for Renovate's next scheduled scan to notice the green checks and merge it itself.
+Merges a Renovate pull request the moment CI passes. Renovate's own scan would otherwise reach it on its next run, minutes or hours later.
 
 Renovate's own `automerge` already does this, but it needs GitHub's native auto-merge to be armable, which requires both "Allow auto-merge" on the repository and a required status check on the target branch. Without those, Renovate falls back to merging on its next run, which is the delay this action removes.
 
 ## Usage
 
-The action cannot own the trigger: `workflow_run` is what lets the merge decision run from the default branch, and a reusable trigger is not a thing an action can provide. So each repository keeps a small stub that declares the trigger and grants the permissions.
+The action cannot own the trigger: `workflow_run` is what lets the merge decision run from the default branch, and a reusable trigger is not a thing an action can provide. So each repository needs a small stub that declares the trigger and grants the permissions.
 
 ```yaml
 name: Automerge Renovate
@@ -36,6 +36,7 @@ jobs:
     steps:
       - uses: h3nc4/renovate-automerge-action@v1
         with:
+          client-id: ${{ vars.AUTOMERGE_APP_CLIENT_ID }}
           private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
 ```
 
@@ -54,17 +55,22 @@ Then label the updates that may merge, from `renovate.json`:
 }
 ```
 
-The label is the gate, so the policy for _which_ updates may merge stays in `renovate.json` rather than being restated in CI. Majors are absent from `matchUpdateTypes`, so they never carry the label and never merge unattended. That matters for anything that runs schema migrations on a major upgrade.
+The label is the gate, so the policy for _which_ updates may merge stays in `renovate.json` rather than being restated in CI. Majors are absent from `matchUpdateTypes`. They go unlabelled, which leaves them out of every unattended merge. That matters for anything that runs schema migrations on a major upgrade.
 
 ## App token
 
-A merge made with the job's `GITHUB_TOKEN` doesn't create new workflow runs, so CI and publish-on-push never fire for the merged bump and nothing rebuilds. Any other credential behaves like a normal push, so the action mints an installation token from a GitHub App.
+A merge made with the job's `GITHUB_TOKEN` doesn't create new workflow runs, so CI and publish-on-push never fire for the merged bump and nothing rebuilds. Any other credential behaves like a normal push. The action requests an installation token from a GitHub App for that reason.
 
 It does that itself, so the calling workflow doesn't need a token step. Only the private key has to be passed in, because an action cannot read the `secrets` context.
 
-The app id is not a secret. It appears on the app's own settings page, and every JWT the app signs includes it, so `client-id` defaults to the app this action was written for. That leaves one secret and nothing else per repository. Override `client-id` to point it at a different app.
+**Register an app of your own first.** The `client-id` default names the app this action was written for. Only that owner has its private key, which means the default gets nobody else a token. Adopting this action means creating an app and passing both values.
 
-Install the app with **All repositories** and it covers repositories you create later, without collaborator invitations. It needs `Contents: write`, `Pull requests: write` and `Checks: read`.
+1. Under **Settings → Developer settings → GitHub Apps**, create an app. Grant `Contents: write`, `Pull requests: write` and `Checks: read`, and nothing further.
+2. Install it on the account with **All repositories**, which covers repositories created later without another invitation.
+3. Generate a private key and store the `.pem` as a secret.
+4. Take the client id from the app's settings page and pass it as `client-id`.
+
+The app id is not a secret. It appears on the app's own settings page, and every JWT the app signs includes it. A repository variable is the right home for it, as in the stub above.
 
 Passing `token` instead uses that credential and skips the app entirely, for a personal access token. With neither, it falls back to the job token, which merges but triggers nothing.
 
@@ -94,7 +100,7 @@ for GitHub Apps and brackets are not valid in usernames.
 
 | input           | default         | description                                           |
 | --------------- | --------------- | ----------------------------------------------------- |
-| `client-id`     | the owner's app | App id used to mint a token. Not a secret.            |
+| `client-id`     | the owner's app | App id the token is requested for. Not a secret.      |
 | `private-key`   | none            | That app's private key, from a secret.                |
 | `token`         | none            | Credential to use instead of an app, such as a PAT.   |
 | `label`         | `automerge`     | Label the pull request must have.                     |
