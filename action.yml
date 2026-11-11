@@ -189,7 +189,14 @@ runs:
           printf '%s\n' "${merge_output}"
           case "${merge_output}" in
           *"Head branch was modified"*) ;;
-          *) exit 1 ;;
+          *)
+            # Strict protection refuses a branch behind its base, and Renovate rebases it itself.
+            # mergeable_state reads blocked under a review rule, so count the commits instead.
+            base=$(gh api "repos/${GH_REPO}/pulls/${number}" --jq '.base.ref')
+            behind=$(gh api "repos/${GH_REPO}/compare/${base}...${HEAD_SHA}" --jq '.behind_by')
+            [ "${behind}" -gt 0 ] || exit 1
+            skip "Pull request #${number} is ${behind} commit(s) behind ${base}, so the run testing its rebase merges it"
+            ;;
           esac
 
           current=$(gh api "repos/${GH_REPO}/pulls/${number}" --jq '.head.sha')
