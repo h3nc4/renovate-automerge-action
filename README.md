@@ -23,11 +23,10 @@ permissions: {}
 jobs:
   automerge:
     name: Merge if CI passed
-    # Evaluated before a runner is allocated, so a run that cannot lead to a merge costs
-    # nothing. Check the event too: CI usually also runs on pushes to the default branch, and
-    # without it every push boots a runner just to skip. The action re-checks both anyway.
+    # Evaluated before a runner is allocated, so a push to the default branch or a cancelled run
+    # costs nothing. The action re-checks both anyway.
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
+      contains(fromJSON('["success", "failure", "timed_out"]'), github.event.workflow_run.conclusion) &&
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -74,6 +73,12 @@ The app id is not a secret. It appears on the app's own settings page, and every
 
 Passing `token` instead uses that credential and skips the app entirely, for a personal access token. With neither, it falls back to the job token, which merges but triggers nothing.
 
+## Failed pull requests
+
+When a protection rule requires branches to be up to date, Renovate rebases every open branch behind its base, so each merge to the default branch runs the whole suite again on a pull request that already failed. A labelled Renovate pull request whose run concluded `failure` or `timed_out` gets the `stop-updating` label, Renovate's `stopUpdatingLabel`, and Renovate leaves the branch alone from then on. A head that moved after the failed run is left unlabelled, since its own run decides.
+
+To retry it, tick the rebase box in the pull request or the dependency dashboard, or remove the label. A passing run removes the label before merging, so Renovate rebases the branch as usual the next time the base moves. Set `stop-updating-label` to the same value as a custom `stopUpdatingLabel`, or to an empty string to turn this off.
+
 ## Why `workflow_run`
 
 A `pull_request` trigger runs the workflow definition **from the pull request's head**, so a pull request could edit the checks below and merge itself. A `workflow_run` trigger always runs the definition on the default branch.
@@ -99,15 +104,16 @@ for GitHub Apps and brackets are not valid in usernames.
 
 ## Inputs
 
-| input           | default         | description                                           |
-| --------------- | --------------- | ----------------------------------------------------- |
-| `client-id`     | the owner's app | App id the token is requested for. Not a secret.      |
-| `private-key`   | none            | That app's private key, from a secret.                |
-| `token`         | none            | Credential to use instead of an app, such as a PAT.   |
-| `label`         | `automerge`     | Label the pull request must have.                     |
-| `bot-login`     | `renovate[bot]` | Login that must have opened it and triggered the run. |
-| `merge-method`  | `squash`        | `squash`, `merge` or `rebase`.                        |
-| `delete-branch` | `true`          | Delete the branch after merging.                      |
+| input                 | default         | description                                           |
+| --------------------- | --------------- | ----------------------------------------------------- |
+| `client-id`           | the owner's app | App id the token is requested for. Not a secret.      |
+| `private-key`         | none            | That app's private key, from a secret.                |
+| `token`               | none            | Credential to use instead of an app, such as a PAT.   |
+| `label`               | `automerge`     | Label the pull request must have.                     |
+| `bot-login`           | `renovate[bot]` | Login that must have opened it and triggered the run. |
+| `merge-method`        | `squash`        | `squash`, `merge` or `rebase`.                        |
+| `delete-branch`       | `true`          | Delete the branch after merging.                      |
+| `stop-updating-label` | `stop-updating` | Label for a failed pull request, empty to disable.    |
 
 ## Outputs
 

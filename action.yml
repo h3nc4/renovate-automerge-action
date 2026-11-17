@@ -32,6 +32,13 @@ inputs:
     description: Delete the branch after merging.
     required: false
     default: "true"
+  stop-updating-label:
+    description: >
+      Label put on a labelled pull request whose CI failed, matching Renovate's
+      stopUpdatingLabel, so Renovate stops rebasing it and rerunning a suite that already failed.
+      A passing run takes it off again. Empty disables both.
+    required: false
+    default: stop-updating
   client-id:
     description: >
       GitHub App id used to mint a token. Defaults to the app this action was written for, so a
@@ -88,6 +95,7 @@ runs:
         BOT: ${{ inputs.bot-login }}
         MERGE_METHOD: ${{ inputs.merge-method }}
         DELETE_BRANCH: ${{ inputs.delete-branch }}
+        STOP_LABEL: ${{ inputs.stop-updating-label }}
       run: |
         set -euo pipefail
 
@@ -107,8 +115,15 @@ runs:
           skip "Triggered by ${EVENT_NAME}, not workflow_run. Nothing to do"
         [ "${RUN_EVENT}" = "pull_request" ] ||
           skip "The CI run was triggered by ${RUN_EVENT}, not a pull request"
-        [ "${RUN_CONCLUSION}" = "success" ] ||
-          skip "CI concluded '${RUN_CONCLUSION}', so nothing is merged"
+        red=""
+        case "${RUN_CONCLUSION}" in
+        success) ;;
+        failure | timed_out)
+          [ -n "${STOP_LABEL}" ] || skip "CI concluded '${RUN_CONCLUSION}', so nothing is merged"
+          red="yes"
+          ;;
+        *) skip "CI concluded '${RUN_CONCLUSION}', so nothing is merged" ;;
+        esac
         [ "${RUN_ACTOR}" = "${BOT}" ] ||
           skip "CI was triggered by '${RUN_ACTOR}', not ${BOT}"
         # A fork's pull request must never be merged by this: its token is read-only and its
@@ -125,9 +140,20 @@ runs:
         [ "${author}" = "${BOT}" ] ||
           skip "Pull request #${number} was opened by '${author}', not ${BOT}"
 
-        if ! gh pr view "${number}" --json labels --jq '.labels[].name' |
-            grep -qxF "${LABEL}"; then
+        labels=$(gh pr view "${number}" --json labels --jq '.labels[].name')
+        if ! grep -qxF "${LABEL}" <<<"${labels}"; then
           skip "Pull request #${number} does not carry '${LABEL}'"
+        fi
+
+        # Strict protection makes Renovate rebase every branch behind main, which reruns a suite
+        # that already failed. Renovate skips a pull request with its stopUpdatingLabel.
+        if [ -n "${red}" ]; then
+          current=$(gh api "repos/${GH_REPO}/pulls/${number}" --jq '.head.sha')
+          [ "${current}" = "${HEAD_SHA}" ] ||
+            skip "CI failed on ${HEAD_SHA}, but the head moved to ${current}, so the run testing that commit decides"
+          gh api --method POST "repos/${GH_REPO}/issues/${number}/labels" \
+            -f "labels[]=${STOP_LABEL}" >/dev/null
+          skip "CI concluded '${RUN_CONCLUSION}', so #${number} is labelled '${STOP_LABEL}' and Renovate leaves it alone until the label goes or a rebase is requested"
         fi
 
         # The triggering run is only one check. A repository can gate a pull request with
@@ -173,6 +199,14 @@ runs:
         if [ -n "${bad}" ]; then
           printf '%s\n' "${bad}"
           refuse "Pull request #${number} has commits not authored by ${BOT} or not signed by GitHub"
+        fi
+
+        # A green run after a requested rebase clears the label, or a later move of main would
+        # leave the branch behind with nobody to rebase it.
+        if [ -n "${STOP_LABEL}" ] && grep -qxF "${STOP_LABEL}" <<<"${labels}"; then
+          encoded=$(jq -rn --arg l "${STOP_LABEL}" '$l | @uri')
+          gh api --method DELETE "repos/${GH_REPO}/issues/${number}/labels/${encoded}" >/dev/null
+          echo "::notice::Removed '${STOP_LABEL}' from #${number}, since CI passed"
         fi
 
         # An explicit if, not `[ ... ] && ...`: the latter is exempt from set -e only because it
