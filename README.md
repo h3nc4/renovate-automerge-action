@@ -92,6 +92,7 @@ Each of these exits successfully with a notice rather than failing, so unrelated
 - the pull request was not opened by the bot (`author.login`), checked separately so a commit pushed onto a Renovate branch by someone else is not merged under the bot's authorship
 - the head repository is not this repository, i.e. a fork
 - the pull request does not have the label
+- any check run on the tested commit is still running or concluded other than `success`, `skipped` or `neutral`. The notice lists every such check on one line
 - **any commit in the pull request is not authored by the bot, or not signed by GitHub**. This one reports a warning rather than a notice, since it means an otherwise mergeable Renovate pull request was touched
 - anything was pushed to the branch after the commit CI tested (`--match-head-commit`)
 - the branch is behind its base under a protection rule that requires it to be up to date
