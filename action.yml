@@ -96,6 +96,7 @@ runs:
         MERGE_METHOD: ${{ inputs.merge-method }}
         DELETE_BRANCH: ${{ inputs.delete-branch }}
         STOP_LABEL: ${{ inputs.stop-updating-label }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
 
@@ -162,13 +163,7 @@ runs:
         CHECKS="repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs?per_page=100"
         total=$(gh api "${CHECKS}" --jq '.check_runs | length')
         [ "${total}" -gt 0 ] || skip "No check runs on ${HEAD_SHA}"
-        pending=$(gh api "${CHECKS}" --jq '
-          .check_runs[]
-          | select(
-              .status != "completed"
-              or (.conclusion as $c | ["success", "skipped", "neutral"] | index($c) | not)
-            )
-          | "\(.name) is \(.status)/\(.conclusion // "-")"')
+        pending=$(gh api "${CHECKS}" | jq -r -f "${ACTION_PATH}/pending.jq")
         [ -z "${pending}" ] || skip "Not every check on ${HEAD_SHA} passed: ${pending}"
 
         # Every commit must be authored by the bot and signed by GitHub itself.
